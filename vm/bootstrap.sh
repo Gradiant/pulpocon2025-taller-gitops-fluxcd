@@ -42,6 +42,13 @@ networking:
   disableDefaultCNI: true
 nodes:
 - role: control-plane
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
+  - containerPort: 30443
+    hostPort: 30443
+    protocol: TCP
 EOF
 
   kind create cluster \
