@@ -27,7 +27,7 @@ Para evitar los problemas del directo y no saturar la red te sugerimos preparar 
 
     kubectl get pods -A
     ```
-    > Si ves todo en esta `Running` perfecto, ya estás listo para mañana!
+    > Si ves todo en estado `Running` perfecto, ya estás listo para mañana!
 
 ## ¿Y ahora?
 Ahora ya tienes una máquina virtual con todo lo necesario en tu ordenador.
