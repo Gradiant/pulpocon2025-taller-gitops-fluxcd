@@ -8,7 +8,24 @@ Este documento contiene las instrucciones para configurar manualmente un clúste
 - Acceso root (sudo)
 - Conexión a Internet
 
-## 1. Preparación del Sistema
+## 1. Verificación de Dependencias
+
+Antes de comenzar, verifica que tienes acceso a todas las herramientas necesarias:
+
+```bash
+# Verificar que curl esté disponible
+command -v curl >/dev/null 2>&1 || { echo "curl no está instalado"; exit 1; }
+
+# Verificar que wget esté disponible
+command -v wget >/dev/null 2>&1 || { echo "wget no está instalado"; exit 1; }
+
+# Verificar permisos de sudo
+sudo -v || { echo "Se requieren permisos de sudo"; exit 1; }
+
+echo "Todas las dependencias básicas están disponibles"
+```
+
+## 2. Preparación del Sistema
 
 ### Actualizar el sistema
 ```bash
@@ -21,7 +38,13 @@ sudo apt-get upgrade -y
 sudo apt-get install -y curl wget apt-transport-https ca-certificates gnupg lsb-release
 ```
 
-## 2. Instalación de Docker
+### Instalar bash-completion
+```bash
+# Instalar bash-completion para autocompletado
+sudo apt-get install -y bash-completion
+```
+
+## 3. Instalación de Docker
 
 ### Instalar Docker Community Edition
 ```bash
@@ -42,10 +65,20 @@ sudo systemctl status docker
 ### Configurar permisos de usuario
 ```bash
 # Crear el grupo docker (si no existe)
-sudo groupadd docker || true
+sudo groupadd --system docker 2>/dev/null || true
 
-# Agregar tu usuario al grupo docker
+# Agregar el usuario actual al grupo docker
 sudo usermod -aG docker $USER
+
+# Si estás trabajando como root, agregar también otros usuarios administrativos
+if [ "$EUID" -eq 0 ]; then
+  # Agregar usuarios del grupo sudo al grupo docker
+  for user in $(getent group sudo | cut -d: -f4 | tr ',' ' '); do
+    if [ -n "$user" ]; then
+      sudo usermod -aG docker "$user"
+    fi
+  done
+fi
 
 # Aplicar los cambios de grupo (reiniciar sesión o usar newgrp)
 newgrp docker
@@ -54,7 +87,9 @@ newgrp docker
 docker info
 ```
 
-## 3. Instalación de kubectl
+> **Nota importante**: Los usuarios agregados al grupo docker deben cerrar sesión y volver a iniciar sesión para que los cambios surtan efecto.
+
+## 4. Instalación de kubectl
 
 ```bash
 # Descargar kubectl v1.29.6
@@ -68,7 +103,33 @@ sudo mv kubectl /usr/local/bin/
 kubectl version --client
 ```
 
-## 4. Instalación de Kind
+### Configurar autocompletado de kubectl
+```bash
+# Configurar autocompletado y alias para kubectl
+cat >> ~/.bashrc <<'EOF'
+
+# Enable bash completion if available
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+
+# kubectl autocompletion and alias
+if command -v kubectl >/dev/null 2>&1; then
+  source <(kubectl completion bash)
+  alias k=kubectl
+  complete -o default -F __start_kubectl k
+fi
+EOF
+
+# Aplicar los cambios
+source ~/.bashrc
+```
+
+## 5. Instalación de Kind
 
 ```bash
 # Descargar Kind v0.27.0
@@ -82,7 +143,7 @@ sudo mv kind /usr/local/bin/
 kind version
 ```
 
-## 5. Instalación de Helm
+## 6. Instalación de Helm
 
 ```bash
 # Descargar e instalar Helm
@@ -92,7 +153,7 @@ curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 |
 helm version
 ```
 
-## 6. Instalación de Flux CLI
+## 7. Instalación de Flux CLI
 
 ```bash
 # Descargar e instalar Flux CLI
@@ -106,7 +167,7 @@ source ~/.bashrc
 flux version --client
 ```
 
-## 7. Instalación de Kubeseal
+## 8. Instalación de Kubeseal
 
 ```bash
 # Descargar kubeseal v0.32.1
@@ -125,7 +186,7 @@ rm kubeseal-0.32.1-linux-amd64.tar.gz
 kubeseal --version
 ```
 
-## 8. Crear el Clúster Kind
+## 9. Crear el Clúster Kind
 
 ### Crear archivo de configuración para Kind
 ```bash
@@ -136,6 +197,13 @@ networking:
   disableDefaultCNI: true
 nodes:
 - role: control-plane
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
+  - containerPort: 30443
+    hostPort: 30443
+    protocol: TCP
 EOF
 ```
 
@@ -143,12 +211,12 @@ EOF
 ```bash
 # Crear el clúster Kind
 kind create cluster \
-  --name kind \
+  --name kind-cilium \
   --image kindest/node:v1.31.4 \
   --config /tmp/kind-cluster-config.yaml
 
 # Exportar la configuración de kubectl
-kind export kubeconfig --name kind
+kind export kubeconfig --name kind-cilium
 
 # Verificar que el clúster esté funcionando
 kubectl get nodes
@@ -165,7 +233,7 @@ done
 echo "Nodo registrado exitosamente"
 ```
 
-## 9. Instalación de Cilium
+## 10. Instalación de Cilium
 
 ### Agregar el repositorio de Helm de Cilium
 ```bash
@@ -176,7 +244,7 @@ helm repo update
 ### Obtener la IP del nodo de control
 ```bash
 # Obtener el nombre del nodo de control-plane
-CONTROL_PLANE=$(kind get nodes --name kind | grep control-plane)
+CONTROL_PLANE=$(kind get nodes --name kind-cilium | grep control-plane)
 
 # Obtener la IP del contenedor
 API_HOST=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTROL_PLANE}")
@@ -215,7 +283,7 @@ kubectl wait --for=condition=Ready node --all --timeout=300s
 kubectl get nodes -o wide
 ```
 
-## 10. Instalación de Flux
+## 11. Instalación de Flux
 
 ```bash
 # Instalar los componentes de Flux
@@ -225,7 +293,7 @@ flux install --components-extra=image-reflector-controller,image-automation-cont
 kubectl get pods -n flux-system
 ```
 
-## 11. Instalación de Sealed Secrets
+## 12. Instalación de Sealed Secrets
 
 ### Agregar el repositorio de Sealed Secrets
 ```bash
@@ -244,7 +312,65 @@ helm upgrade --install sealed-secrets-controller sealed-secrets/sealed-secrets \
 kubectl get pods -n kube-system | grep sealed-secrets
 ```
 
-## 12. Configuración del Kubeconfig para el Usuario
+## 13. Instalación de HAProxy
+
+HAProxy se utiliza como balanceador de carga para redirigir el tráfico HTTP del puerto 80 al puerto 30080 del clúster.
+
+### Instalar HAProxy
+```bash
+# Actualizar repositorios e instalar HAProxy
+sudo apt-get update -y
+sudo apt-get install -y haproxy
+
+# Habilitar el servicio
+sudo systemctl enable haproxy
+```
+
+### Configurar HAProxy
+```bash
+# Crear la configuración de HAProxy
+sudo tee /etc/haproxy/haproxy.cfg > /dev/null <<EOF
+global
+    daemon
+    maxconn 2048
+
+defaults
+    mode http
+    option httplog
+    option dontlognull
+    timeout connect 5s
+    timeout client  50s
+    timeout server  50s
+
+frontend http
+    bind *:80
+    mode http
+    default_backend apisix_http
+
+backend apisix_http
+    mode http
+    option http-keep-alive
+    option forwardfor
+    http-request set-header Host %[req.hdr(Host)]
+    http-request set-header X-Forwarded-Host %[req.hdr(Host)]
+    http-request set-header X-Forwarded-Proto http if !{ ssl_fc }
+    server apisix 127.0.0.1:30080 check
+EOF
+```
+
+### Verificar y reiniciar HAProxy
+```bash
+# Verificar la configuración
+sudo haproxy -c -V -f /etc/haproxy/haproxy.cfg
+
+# Reiniciar el servicio
+sudo systemctl restart haproxy
+
+# Verificar que esté funcionando
+sudo systemctl status haproxy
+```
+
+## 14. Configuración del Kubeconfig para el Usuario
 
 Si estás trabajando con un usuario diferente (por ejemplo, `vagrant`):
 
@@ -254,7 +380,7 @@ sudo -u vagrant mkdir -p /home/vagrant/.kube
 
 # Exportar kubeconfig para el usuario
 kind export kubeconfig \
-  --name kind \
+  --name kind-cilium \
   --kubeconfig /home/vagrant/.kube/config
 
 # Cambiar permisos
@@ -262,10 +388,10 @@ sudo chown vagrant:vagrant /home/vagrant/.kube/config
 sudo chmod 600 /home/vagrant/.kube/config
 
 # Establecer el contexto
-sudo -u vagrant kubectl config use-context kind-kind
+sudo -u vagrant kubectl config use-context kind-kind-cilium
 ```
 
-## 13. Verificación Final
+## 15. Verificación Final
 
 ```bash
 # Verificar que todos los componentes estén funcionando
@@ -287,6 +413,9 @@ kubectl get pods -n flux-system
 echo "=== Verificación de Sealed Secrets ==="
 kubectl get pods -n kube-system -l app.kubernetes.io/name=sealed-secrets
 
+echo "=== Verificación de HAProxy ==="
+sudo systemctl status haproxy --no-pager -l
+
 echo "=== Estado General ==="
 kubectl cluster-info
 ```
@@ -299,7 +428,7 @@ Las siguientes son las versiones específicas utilizadas en este setup:
 - **K8S_VERSION**: v1.29.6 (para kubectl), v1.31.4 (para el nodo Kind)
 - **CILIUM_VERSION**: 1.17.2
 - **KUBESEAL_VERSION**: 0.32.1
-- **CLUSTER_NAME**: kind
+- **CLUSTER_NAME**: kind-cilium
 - **KIND_NODE_IMAGE**: kindest/node:v1.31.4
 
 ## Solución de Problemas
@@ -322,7 +451,7 @@ groups $USER
 docker ps
 
 # Limpiar clústeres existentes si es necesario
-kind delete cluster --name kind
+kind delete cluster --name kind-cilium
 ```
 
 ### Si los pods de Cilium no arrancan:
@@ -348,7 +477,7 @@ kubectl logs -n flux-system -l app=source-controller
 Para eliminar todo el setup:
 ```bash
 # Eliminar el clúster Kind
-kind delete cluster --name kind
+kind delete cluster --name kind-cilium
 
 # Opcional: eliminar imágenes Docker relacionadas
 docker system prune -f
