@@ -100,6 +100,79 @@ install_kubectl() {
   log_info "kubectl installed."
 }
 
+install_bash_completion() {
+  if dpkg -l | grep -q bash-completion; then
+    log_info "bash-completion already installed."
+    return
+  fi
+  
+  log_info "Installing bash-completion..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq
+    apt-get install -y bash-completion
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y bash-completion
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y bash-completion
+  else
+    log_warn "Package manager not found. bash-completion may need to be installed manually."
+    return
+  fi
+  log_info "bash-completion installed."
+}
+
+configure_kubectl_completion() {
+  log_info "Configuring kubectl autocompletion and alias..."
+  
+  # Add kubectl completion and alias to bashrc for all users
+  local completion_config='
+# Enable bash completion if available
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+
+# kubectl autocompletion and alias
+if command -v kubectl >/dev/null 2>&1; then
+  source <(kubectl completion bash)
+  alias k=kubectl
+  complete -o default -F __start_kubectl k
+fi
+'
+  
+  # Configure for root
+  if ! grep -q "kubectl completion bash" /root/.bashrc 2>/dev/null; then
+    echo "$completion_config" >> /root/.bashrc
+  fi
+  
+  # Configure for sudo user if exists
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    local user_home
+    user_home="$(eval echo "~${SUDO_USER}")"
+    if [[ -f "${user_home}/.bashrc" ]]; then
+      if ! grep -q "kubectl completion bash" "${user_home}/.bashrc"; then
+        echo "$completion_config" >> "${user_home}/.bashrc"
+        chown "${SUDO_USER}:${SUDO_USER}" "${user_home}/.bashrc"
+      fi
+    fi
+  fi
+  
+  # Configure for vagrant user if exists
+  if id -u vagrant >/dev/null 2>&1; then
+    if [[ -f "/home/vagrant/.bashrc" ]]; then
+      if ! grep -q "kubectl completion bash" "/home/vagrant/.bashrc"; then
+        echo "$completion_config" >> "/home/vagrant/.bashrc"
+        chown vagrant:vagrant "/home/vagrant/.bashrc"
+      fi
+    fi
+  fi
+  
+  log_info "kubectl autocompletion and alias 'k' configured."
+}
+
 install_helm() {
   if command -v helm >/dev/null 2>&1; then
     log_info "Helm already installed."
@@ -157,8 +230,10 @@ main() {
   configure_docker_group
   postcheck_docker
 
+  install_bash_completion
   install_kind
   install_kubectl
+  configure_kubectl_completion
   install_helm
   install_flux
   install_kubeseal

@@ -30,7 +30,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/srgottfried/pulpo-inventory-app-frontend
+          images: docker.io/<usuario>/pulpo-inventory-app-frontend
           tags: |
             type=ref,event=tag
             type=semver,pattern=v{{version}}
