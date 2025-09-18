@@ -27,7 +27,7 @@ Para evitar los problemas del directo y no saturar la red te sugerimos preparar 
 
     kubectl get pods -A
     ```
-    > Si ves todo en estado `Running` perfecto, ya estás listo para mañana!
+    > Si ves todo en estado `Running` perfecto, ya estás listo para el viernes!
 
 ## ¿Y ahora?
 Ahora ya tienes una máquina virtual con todo lo necesario en tu ordenador.
@@ -50,5 +50,12 @@ vagrant destroy
 
 > También puedes usar la interfaz gráfica de VirtualBox para interactuar con ella.
 
+
+## Te puede la curiosidad
+Si eres muy curioso, te dejamos un diagrama con el entorno que hemos montado en tu máquina para el viernes:
+
+![img](./.img/taller-pulpo-vm.png)
+
+
 ## Se me ha complicado esto...
-Si no has sido capaz de llegar hasta el punto 7, no te preocupes, lo dejaremos listo entre todos el viernes al comezar el taller.
+Si no has sido capaz de llegar hasta el punto 7, no te preocupes, lo dejaremos listo entre todos el viernes al comenzar el taller.
